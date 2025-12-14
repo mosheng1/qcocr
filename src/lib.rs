@@ -21,7 +21,6 @@ pub struct OcrLine {
 
 impl OcrLine {
     /// 计算行中单词之间的水平间距
-    /// 
     /// 返回间距数组，gaps[i] 表示第 i 个单词和第 i+1 个单词之间的距离（像素）
     pub fn compute_word_gaps(&self) -> Vec<f32> {
         let mut gaps = Vec::new();
@@ -30,9 +29,8 @@ impl OcrLine {
             let w1 = &self.words[i].bounds;
             let w2 = &self.words[i + 1].bounds;
 
-            // gap = 下一个单词左侧 - 上一个单词右侧
             let gap = w2.x - (w1.x + w1.width);
-            gaps.push(gap.max(0.0)); // 负数情况处理为0（重叠情况）
+            gaps.push(gap.max(0.0)); 
         }
 
         gaps
@@ -98,13 +96,11 @@ pub struct OcrRecognitionResult {
 /// - `image_path` - 图片文件路径
 /// - `language` - 语言代码（如 "zh-Hans-CN", "en-US"），None 使用系统默认语言
 pub fn recognize_from_file(image_path: &str, language: Option<&str>) -> Result<OcrRecognitionResult, String> {
-    // 检查文件是否存在
     let file_path = Path::new(image_path);
     if !file_path.exists() {
         return Err(format!("文件不存在: {}", image_path));
     }
     
-    // 调用内部函数
     recognize_internal(image_path, language)
         .map_err(|e| format!("OCR 识别失败: {}", e))
 }
@@ -122,23 +118,18 @@ pub fn recognize_from_bytes(image_data: &[u8], language: Option<&str>) -> Result
 fn recognize_from_bytes_internal(image_data: &[u8], language: Option<&str>) -> windows::core::Result<OcrRecognitionResult> {
     use windows::Storage::Streams::{DataWriter, InMemoryRandomAccessStream};
     
-    // 创建内存流
     let stream = InMemoryRandomAccessStream::new()?;
     let writer = DataWriter::CreateDataWriter(&stream)?;
     
-    // 写入图片数据
     writer.WriteBytes(image_data)?;
     writer.StoreAsync()?.get()?;
     writer.FlushAsync()?.get()?;
     
-    // 重置流位置到开始
     stream.Seek(0)?;
     
-    // 解码位图
     let decoder = BitmapDecoder::CreateAsync(&stream)?.get()?;
     let bitmap = decoder.GetSoftwareBitmapAsync()?.get()?;
     
-    // 创建 OCR 引擎
     let engine = if let Some(lang) = language {
         let language_obj = Language::CreateLanguage(&HSTRING::from(lang))?;
         OcrEngine::TryCreateFromLanguage(&language_obj)?
@@ -146,35 +137,27 @@ fn recognize_from_bytes_internal(image_data: &[u8], language: Option<&str>) -> w
         OcrEngine::TryCreateFromUserProfileLanguages()?
     };
     
-    // 执行 OCR
     let result = engine.RecognizeAsync(&bitmap)?.get()?;
     
-    // 转换结果
     convert_ocr_result(&result)
 }
 
 fn recognize_internal(image_path: &str, language: Option<&str>) -> windows::core::Result<OcrRecognitionResult> {
-    // 加载图片文件
     let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(image_path))?.get()?;
     let stream = file.OpenAsync(FileAccessMode::Read)?.get()?;
     
-    // 解码位图
     let decoder = BitmapDecoder::CreateAsync(&stream)?.get()?;
     let bitmap = decoder.GetSoftwareBitmapAsync()?.get()?;
     
-    // 创建 OCR 引擎
     let engine = if let Some(lang) = language {
         let language_obj = Language::CreateLanguage(&HSTRING::from(lang))?;
         OcrEngine::TryCreateFromLanguage(&language_obj)?
     } else {
-        // 使用系统默认语言
         OcrEngine::TryCreateFromUserProfileLanguages()?
     };
     
-    // 执行 OCR
     let result = engine.RecognizeAsync(&bitmap)?.get()?;
     
-    // 转换结果
     convert_ocr_result(&result)
 }
 
@@ -188,15 +171,10 @@ fn convert_ocr_result(win_result: &WinOcrResult) -> windows::core::Result<OcrRec
     for i in 0..line_count {
         let win_line = win_lines.GetAt(i)?;
 
-        let line_text = win_line.Text()?.to_string();
-        full_text.push_str(&line_text);
-        full_text.push('\n');
-
         let mut words = Vec::new();
         let win_words = win_line.Words()?;
         let word_count = win_words.Size()?;
 
-        // 行的 min-max 边界，用于计算行 bbox
         let mut min_x = f32::MAX;
         let mut min_y = f32::MAX;
         let mut max_x = f32::MIN;
@@ -215,7 +193,6 @@ fn convert_ocr_result(win_result: &WinOcrResult) -> windows::core::Result<OcrRec
                 height: rect.Height,
             };
 
-            // 更新行 bounding box
             min_x = min_x.min(rect.X);
             min_y = min_y.min(rect.Y);
             max_x = max_x.max(rect.X + rect.Width);
@@ -227,7 +204,10 @@ fn convert_ocr_result(win_result: &WinOcrResult) -> windows::core::Result<OcrRec
             });
         }
 
-        // 行的 bounding box（由所有单词的 bbox 合并得到）
+        let line_text: String = words.iter().map(|w| w.text.as_str()).collect();
+        full_text.push_str(&line_text);
+        full_text.push('\n');
+
         let line_bounds = if word_count > 0 {
             BoundingBox {
                 x: min_x,
@@ -236,7 +216,6 @@ fn convert_ocr_result(win_result: &WinOcrResult) -> windows::core::Result<OcrRec
                 height: max_y - min_y,
             }
         } else {
-            // 无单词，给一个空 bbox
             BoundingBox {
                 x: 0.0,
                 y: 0.0,
